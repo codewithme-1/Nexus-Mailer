@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Mailer | Admin Login</title>
+    <style>
+        :root{--primary:#4a729e;--primary-hover:#3b5c80;--bg-color:#f4f6f8;--card-bg:#ffffff;--text-main:#333333;--text-muted:#666666;--border:#e0e0e0}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background-color:var(--bg-color);display:flex;justify-content:center;align-items:center;height:100vh;color:var(--text-main)}.login-container{background:var(--card-bg);padding:40px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);width:100%;max-width:400px;text-align:center}.logo{font-size:24px;font-weight:bold;color:var(--primary);margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px}.subtitle{color:var(--text-muted);font-size:14px;margin-bottom:30px}.form-group{margin-bottom:20px;text-align:left}.form-group label{display:block;font-size:14px;margin-bottom:6px;font-weight:500}.form-group input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;box-sizing:border-box;transition:border-color .2s}.form-group input:focus{outline:none;border-color:var(--primary)}.btn-login{width:100%;padding:12px;background-color:var(--primary);color:#fff;border:none;border-radius:4px;font-size:16px;font-weight:bold;cursor:pointer;transition:background-color .2s}.btn-login:hover:not(:disabled){background-color:var(--primary-hover)}.btn-login:disabled{background-color:#92a9c1;cursor:not-allowed}#error-message{color:#d9534f;font-size:13px;margin-top:15px;display:none}.toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:4px;color:#fff;font-weight:500;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.15);transform:translateY(-100px);opacity:0;transition:all .3s ease;z-index:1000}.toast.show{transform:translateY(0);opacity:1}.toast.success{background-color:#4caf50}.toast.error{background-color:#d9534f}
+    </style>
+</head>
+<body>
+
+    <div id="toast" class="toast"></div>
+
+    <div class="login-container">
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 2L11 13"></path>
+                <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
+            </svg>
+            Nexus Mailer
+        </div>
+        <div class="subtitle">Secure Admin Access</div>
+        
+        <form id="login-form">
+            <div class="form-group">
+                <label for="email">Admin Email</label>
+                <input type="email" id="email" required placeholder="admin@miningofficial.co.ke">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn-login" id="login-btn">Sign In</button>
+            <div id="error-message"></div>
+        </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
+</body>
+</html>
