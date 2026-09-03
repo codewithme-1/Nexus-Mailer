@@ -33,157 +33,291 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
 });
 
 // ==========================================
-// 4. DEMO / SIMULATION ENGINE (With Persistence)
+// 4. FIX TEMPLATE DOWNLOADS (Data URIs)
+// ==========================================
+const csvTemplate = "Email,FirstName,LastName\ninvestor1@demo.com,John,Doe\npartner@demo.com,Jane,Smith";
+const csvBlob = new Blob([csvTemplate], { type: 'text/csv' });
+const csvUrl = URL.createObjectURL(csvBlob);
+
+document.querySelectorAll('.template-btn').forEach(btn => {
+    const href = btn.getAttribute('href');
+    if (href === 'nexus_template.csv') {
+        btn.href = csvUrl;
+    } else if (href === 'nexus_template.xlsx') {
+        btn.href = csvUrl;
+        btn.setAttribute('download', 'nexus_template_demo.csv');
+    }
+});
+
+// ==========================================
+// 5. AUDIENCE MANAGEMENT & FILE UPLOAD
 // ==========================================
 
-let simState = {
-    activeCampaigns: 0,
-    queued: 0,
-    sent: 0, 
-    failed: 0,
-    totalToProcess: 0,
-    isRunning: false,
-    pendingEmails: [] 
-};
+const audienceSelect = document.getElementById('audience-select');
+const uploadModal = document.getElementById('upload-modal');
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
 
-const uiActive = document.getElementById('kpi-active');
-const uiQueued = document.getElementById('kpi-queued');
-const uiSent = document.getElementById('kpi-sent');
-const uiRate = document.getElementById('kpi-rate');
+// Stateless Fetch directly from Supabase
+async function refreshAudienceDropdown() {
+    audienceSelect.innerHTML = '<option value="">-- Loading Audiences... --</option>';
+    
+    const { data: audiences, error } = await supabaseClient.from('audiences').select('*');
+    
+    audienceSelect.innerHTML = '<option value="">-- Select an Audience --</option>';
+    
+    if (error || !audiences) {
+        console.error('Error fetching audiences:', error);
+        return;
+    }
+
+    for (const aud of audiences) {
+        // Fetch accurate count for each audience directly from the database
+        const { count } = await supabaseClient
+            .from('contacts')
+            .select('*', { count: 'exact', head: true })
+            .eq('audience_id', aud.id);
+            
+        const opt = document.createElement('option');
+        opt.value = aud.id;
+        opt.textContent = `${aud.name} (${(count || 0).toLocaleString()} contacts)`;
+        audienceSelect.appendChild(opt);
+    }
+}
+refreshAudienceDropdown();
+
+// Upload Modal Toggles
+document.getElementById('open-upload-modal-btn').addEventListener('click', () => uploadModal.classList.add('show'));
+document.getElementById('cancel-upload-btn').addEventListener('click', () => uploadModal.classList.remove('show'));
+
+// Drag & Drop Handling
+dropZone.addEventListener('dragover', (e) => { 
+    e.preventDefault(); 
+    dropZone.classList.add('dragover'); 
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        dropZone.querySelector('strong').textContent = e.dataTransfer.files[0].name;
+    }
+});
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) {
+        dropZone.querySelector('strong').textContent = fileInput.files[0].name;
+    }
+});
+
+// Process File Upload via FastAPI
+document.getElementById('confirm-upload-btn').addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    const name = document.getElementById('new-audience-name').value.trim();
+    
+    if (!file || !name) {
+        return showToast('Please provide an audience name and select a file.', 'error');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('name', name);
+
+    try {
+        showToast('Uploading file and parsing on server...', 'success');
+        
+        const response = await fetch('https://nexus-mailer-backend.onrender.com/api/audiences/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) throw new Error('Backend failed to process upload.');
+        
+        // Refresh the dropdown dynamically from Supabase
+        await refreshAudienceDropdown();
+        uploadModal.classList.remove('show');
+        showToast(`Audience "${name}" uploaded successfully!`, 'success');
+        
+        // Reset form
+        document.getElementById('new-audience-name').value = '';
+        fileInput.value = '';
+        dropZone.querySelector('strong').innerHTML = 'Drag & Drop your file here<br><span style="font-size: 12px; color: var(--text-muted);">or click to browse (.csv, .xlsx, .txt)</span>';
+        
+    } catch (err) {
+        showToast('Upload to backend failed. Is FastAPI running?', 'error');
+        console.error(err);
+    }
+});
+
+// ==========================================
+// 6. TRUE STATELESS DASHBOARD SYNC & INSTANT TRIGGER
+// ==========================================
+
+let isCampaignRunning = false;
 const terminal = document.getElementById('terminal-log');
 const campaignList = document.getElementById('campaign-list');
 const composerForm = document.getElementById('composer-form');
 
-// --- DATA PERSISTENCE LOGIC ---
-function saveState() {
-    localStorage.setItem('nexus_simState', JSON.stringify(simState));
-    localStorage.setItem('nexus_campaigns', campaignList.innerHTML);
-    localStorage.setItem('nexus_terminal', terminal.innerHTML);
-}
+// Core function that pulls the exact truth from the database to map the UI
+async function syncDashboard() {
+    try {
+        // Add the logs endpoint to the heartbeat fetch
+        const [statsRes, campRes, logsRes] = await Promise.all([
+            fetch('https://nexus-mailer-backend.onrender.com/api/dashboard/stats'),
+            fetch('https://nexus-mailer-backend.onrender.com/api/dashboard/campaigns'),
+            fetch('https://nexus-mailer-backend.onrender.com/api/dashboard/logs')
+        ]);
+        
+        const stats = await statsRes.json();
+        const campData = await campRes.json();
+        const logsData = await logsRes.json();
+        
+        document.getElementById('kpi-active').textContent = stats.active_campaigns;
+        document.getElementById('kpi-queued').textContent = stats.total_queued.toLocaleString();
+        document.getElementById('kpi-sent').textContent = stats.sent_today.toLocaleString();
+        document.getElementById('kpi-rate').textContent = `${stats.success_rate}%`;
 
-function loadState() {
-    const savedState = localStorage.getItem('nexus_simState');
-    if (savedState) {
-        simState = JSON.parse(savedState);
-        // Restore HTML elements
-        campaignList.innerHTML = localStorage.getItem('nexus_campaigns') || '';
-        terminal.innerHTML = localStorage.getItem('nexus_terminal') || '';
-        updateKPIs();
+        // Sync Campaign Progress Bars
+        campaignList.innerHTML = '';
+        campData.campaigns.forEach(camp => {
+            const pct = camp.total === 0 ? 0 : (camp.processed / camp.total) * 100;
+            campaignList.innerHTML += `
+                <div class="campaign-item" id="camp-${camp.id}">
+                    <div class="campaign-meta">
+                        <strong>${camp.subject}</strong>
+                        <span class="status-text">${camp.processed.toLocaleString()} / ${camp.total.toLocaleString()}</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width: ${pct}%"></div>
+                    </div>
+                </div>
+            `;
+        });
+
+        // Historical Log Recovery: Map permanent database logs to the terminal
+        if (logsData.logs && logsData.logs.length > 0) {
+            terminal.innerHTML = ''; // Clear terminal to redraw absolute truth
+            logsData.logs.forEach(data => {
+                const isSuccess = data.status === 'DELIVERED';
+                let statusClass = isSuccess ? 'status-sent' : 'status-failed';
+                let statusText = isSuccess ? 'DELIVERED' : 'BOUNCED  ';
+                
+                if (data.provider === 'Pacing_Engine') {
+                    statusClass = 'status-pending'; 
+                    statusText = data.status;
+                }
+                
+                const logHtml = `
+                    <div class="log-row">
+                        <span class="log-time">[${data.time}]</span>
+                        <span class="log-email">${data.email}</span>
+                        <span class="${statusClass}">${statusText}</span>
+                        <span class="provider-badge">[${data.provider}]</span>
+                    </div>
+                `;
+                terminal.insertAdjacentHTML('beforeend', logHtml);
+            });
+        }
+
+        // Trigger completion modal if a campaign finishes processing its queue
+        if (isCampaignRunning && stats.total_queued === 0 && stats.active_campaigns === 0) {
+            isCampaignRunning = false;
+            completionModal.classList.add('show');
+        }
+    } catch (e) {
+        console.error("Dashboard sync failed", e);
     }
 }
 
-// Restore state immediately when page loads
-loadState();
-// ------------------------------
+// Initial sync on load
+syncDashboard();
 
-composerForm.addEventListener('submit', (e) => {
+// Start the 2-second heartbeat to guarantee the frontend never gets left behind
+setInterval(syncDashboard, 2000);
+
+composerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const subject = document.getElementById('camp-subject').value;
-    const recipientsRaw = document.getElementById('camp-recipients').value;
+    const bodyHtml = document.getElementById('camp-body').value;
+    const audienceId = audienceSelect.value;
     
-    const parsedEmails = recipientsRaw.split(/[\n,]+/).map(email => email.trim()).filter(email => email.length > 0);
-    
-    if (parsedEmails.length === 0) {
-        showToast('Please enter at least one valid recipient.', 'error');
+    if (!audienceId) {
+        showToast('Please select a target audience.', 'error');
         return;
     }
     
-    simState.pendingEmails = parsedEmails;
-    const count = parsedEmails.length;
-    
-    simState.activeCampaigns++;
-    simState.queued = count;
-    simState.totalToProcess = count;
-    simState.isRunning = true;
-    
-    updateKPIs();
-    renderCampaignCard(subject, count);
-    composerForm.reset();
-    saveState(); // Save immediately on start
-    
-    showToast('Campaign successfully queued for dispatch!', 'success');
+    try {
+        isCampaignRunning = true;
+        
+        // 1. Send actual request to the FastAPI Backend instantly
+        const response = await fetch('https://nexus-mailer-backend.onrender.com/api/campaign/queue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                subject: subject,
+                body_html: bodyHtml,
+                audience_id: audienceId 
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Backend failed to respond.');
+        }
+        
+        // 2. Instantly update the UI to show the campaign
+        syncDashboard();
+        composerForm.reset();
+        audienceSelect.value = '';
+        
+        showToast('Campaign Queued! Instant dispatch started.', 'success');
+    } catch (err) {
+        isCampaignRunning = false;
+        const errorText = err.message === 'Failed to fetch' ? 'Connection to FastAPI failed. Is the server running?' : err.message;
+        showToast(errorText, 'error');
+    }
 });
 
-function updateKPIs() {
-    uiActive.textContent = simState.activeCampaigns;
-    uiQueued.textContent = simState.queued.toLocaleString();
-    uiSent.textContent = simState.sent.toLocaleString();
-    
-    const totalProcessed = simState.sent + simState.failed;
-    const rate = totalProcessed === 0 ? 100 : ((simState.sent / totalProcessed) * 100).toFixed(1);
-    uiRate.textContent = `${rate}%`;
-}
+// ----------------------------------------------------
+// SERVER-SENT EVENTS (SSE) - Live Telemetry Stream
+// ----------------------------------------------------
+const evtSource = new EventSource('https://nexus-mailer-backend.onrender.com/api/telemetry/stream');
 
-function renderCampaignCard(subject, total) {
-    const id = `camp-${Date.now()}`;
-    const html = `
-        <div class="campaign-item" id="${id}">
-            <div class="campaign-meta">
-                <strong>${subject}</strong>
-                <span class="status-text">0 / ${total.toLocaleString()}</span>
-            </div>
-            <div class="progress-bar-bg">
-                <div class="progress-bar-fill" style="width: 0%"></div>
-            </div>
-        </div>
-    `;
-    campaignList.insertAdjacentHTML('afterbegin', html);
-}
-
-// Background Worker Loop
-setInterval(() => {
-    if (!simState.isRunning || simState.pendingEmails.length === 0) return;
+evtSource.onmessage = function(event) {
+    const data = JSON.parse(event.data);
     
-    const batchSize = Math.min(Math.floor(Math.random() * 3) + 1, simState.pendingEmails.length);
+    const isSuccess = data.status === 'DELIVERED';
+    let statusClass = isSuccess ? 'status-sent' : 'status-failed';
+    let statusText = isSuccess ? 'DELIVERED' : 'BOUNCED  ';
     
-    for(let i=0; i<batchSize; i++) {
-        const email = simState.pendingEmails.shift();
-        simState.queued--;
-        
-        const isSuccess = Math.random() > 0.03;
-        if(isSuccess) simState.sent++; else simState.failed++;
-        
-        const time = new Date().toLocaleTimeString('en-US', { hour12: false });
-        const statusClass = isSuccess ? 'status-sent' : 'status-failed';
-        const statusText = isSuccess ? 'DELIVERED' : 'BOUNCED  ';
-        
-        const logHtml = `
-            <div class="log-row">
-                <span class="log-time">[${time}]</span>
-                <span class="log-email">${email}</span>
-                <span class="${statusClass}">${statusText}</span>
-            </div>
-        `;
-        terminal.insertAdjacentHTML('afterbegin', logHtml);
+    // Override colors for pacing engine logs
+    if (data.provider === 'Pacing_Engine') {
+        statusClass = 'status-pending'; // Just visually neutral
+        statusText = data.status;
     }
     
+    // Inject log into terminal instantly for visual speed
+    const logHtml = `
+        <div class="log-row">
+            <span class="log-time">[${data.time}]</span>
+            <span class="log-email">${data.email}</span>
+            <span class="${statusClass}">${statusText}</span>
+            <span class="provider-badge">[${data.provider}]</span>
+        </div>
+    `;
+    terminal.insertAdjacentHTML('afterbegin', logHtml);
+    
+    // Keep terminal clean
     while (terminal.children.length > 40) {
         terminal.removeChild(terminal.lastChild);
     }
     
-    const firstCamp = campaignList.firstElementChild;
-    if (firstCamp) {
-        const fill = firstCamp.querySelector('.progress-bar-fill');
-        const text = firstCamp.querySelector('.status-text');
-        
-        const processedThisCamp = simState.totalToProcess - simState.queued;
-        const pct = (processedThisCamp / simState.totalToProcess) * 100;
-        
-        fill.style.width = `${pct}%`;
-        text.textContent = `${processedThisCamp.toLocaleString()} / ${simState.totalToProcess.toLocaleString()}`;
-    }
+    // Fetch the absolute truth from the backend for the progress bars
+    syncDashboard();
+};
 
-    updateKPIs();
-    saveState(); // Save state on every background tick
-    
-    if (simState.pendingEmails.length === 0) {
-        simState.activeCampaigns = 0;
-        simState.isRunning = false;
-        simState.totalToProcess = 0;
-        updateKPIs();
-        saveState(); // Final save on completion
-        
-        completionModal.classList.add('show');
-    }
-}, 800);
+evtSource.onerror = function(err) {
+    console.error("SSE stream error (waiting to reconnect...):", err);
+};
