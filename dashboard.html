@@ -32,7 +32,8 @@
         
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; font-size: 13px; margin-bottom: 5px; font-weight: 500; }
-        .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
+        .flex-row { display: flex; gap: 10px; align-items: center; }
         .btn { background: var(--primary); color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.2s; }
         .btn:hover { background: var(--primary-hover); }
 
@@ -42,11 +43,12 @@
         .progress-bar-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.5s ease; }
 
         .terminal { background: #0f172a; color: #4ade80; font-family: monospace; padding: 15px; border-radius: 6px; height: 250px; overflow-y: auto; font-size: 12px; line-height: 1.5; }
-        .log-row { display: flex; gap: 15px; border-bottom: 1px solid #1e293b; padding: 4px 0; }
+        .log-row { display: flex; gap: 15px; border-bottom: 1px solid #1e293b; padding: 4px 0; align-items: center; }
         .log-time { color: #94a3b8; }
         .log-email { flex: 1; }
         .status-sent { color: #4ade80; }
         .status-failed { color: #f87171; }
+        .provider-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #334155; color: #94a3b8; margin-left: auto; }
 
         /* Toast Notifications */
         .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 4px; color: white; font-weight: 500; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-100px); opacity: 0; transition: all 0.3s ease; z-index: 1000; }
@@ -54,7 +56,7 @@
         .toast.success { background-color: var(--success); }
         .toast.error { background-color: var(--danger); }
 
-        /* Modal Overlay */
+        /* Modal Overlays */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); display: none; justify-content: center; align-items: center; z-index: 2000; opacity: 0; transition: opacity 0.3s ease; }
         .modal-overlay.show { display: flex; opacity: 1; }
         .modal-content { background: var(--card-bg); padding: 30px; border-radius: 8px; width: 90%; max-width: 420px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); transform: translateY(20px); transition: transform 0.3s ease; }
@@ -63,12 +65,19 @@
         .modal-content p { font-size: 14px; color: var(--text-muted); margin-bottom: 25px; line-height: 1.5; }
         .modal-content .btn { width: auto; padding: 10px 24px; }
 
+        /* Upload Zone Styles */
+        .upload-zone { border: 2px dashed var(--border); padding: 30px; border-radius: 8px; margin: 20px 0; background: #fafafa; cursor: pointer; transition: all 0.2s; }
+        .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary); background: #f0f4f8; }
+        .template-links { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
+        .template-btn { background: #e2e8f0; color: var(--text-main); font-size: 12px; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-weight: 500; }
+        .template-btn:hover { background: #cbd5e1; }
+
         /* Mobile Responsiveness Fix */
         @media (max-width: 768px) {
             body { flex-direction: column; overflow-y: auto; }
             .sidebar { width: 100%; height: auto; flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; }
             .sidebar-header { border-bottom: none; }
-            .nav-links { display: none; } /* Hide nav on mobile to save space */
+            .nav-links { display: none; }
             .sidebar-footer { border-top: none; padding: 10px 20px; }
             .main-content { overflow-y: visible; padding: 15px; }
             .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -90,6 +99,39 @@
             <h3>Campaign Dispatched</h3>
             <p>All queued emails have been successfully processed. The background worker has entered standby mode.</p>
             <button class="btn" id="close-modal-btn">Acknowledge</button>
+        </div>
+    </div>
+
+    <!-- Audience Upload Modal -->
+    <div class="modal-overlay" id="upload-modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <h3 style="margin-bottom: 5px;">Upload Audience</h3>
+            <p style="margin-bottom: 15px;">Use the provided templates to ensure perfect formatting.</p>
+            
+            <div class="template-links">
+                <a href="nexus_template.csv" download class="template-btn">↓ Download .CSV</a>
+                <a href="nexus_template.xlsx" download class="template-btn">↓ Download .XLSX</a>
+            </div>
+
+            <div class="form-group" style="text-align: left;">
+                <label>Audience Name</label>
+                <input type="text" id="new-audience-name" placeholder="e.g. September Tech Outreach" required>
+            </div>
+
+            <div class="upload-zone" id="drop-zone">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 10px;">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <p><strong>Drag & Drop your file here</strong><br><span style="font-size: 12px; color: var(--text-muted);">or click to browse (.csv, .xlsx, .txt)</span></p>
+                <input type="file" id="file-input" accept=".csv, .xlsx, .txt" style="display: none;">
+            </div>
+            
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button class="btn" id="cancel-upload-btn" style="background: var(--text-muted);">Cancel</button>
+                <button class="btn" id="confirm-upload-btn">Upload Contacts</button>
+            </div>
         </div>
     </div>
 
@@ -143,8 +185,14 @@
                         <textarea id="camp-body" rows="4" placeholder="Hello {{name}}, ..." required></textarea>
                     </div>
                     <div class="form-group">
-                        <label>Recipients (Comma separated)</label>
-                        <textarea id="camp-recipients" rows="3" placeholder="user1@example.com, user2@example.com" required></textarea>
+                        <label>Target Audience</label>
+                        <div class="flex-row">
+                            <select id="audience-select" required>
+                                <option value="">-- Select an Audience --</option>
+                                <!-- Injected via JS -->
+                            </select>
+                            <button type="button" class="btn" id="open-upload-modal-btn" style="width: auto; white-space: nowrap;">Upload New</button>
+                        </div>
                     </div>
                     <button type="submit" class="btn" id="submit-btn">Queue Campaign</button>
                 </form>
